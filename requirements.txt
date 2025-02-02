@@ -12,3 +12,4 @@ pypdf
 llama-index
 python-dotenv
 numexpr
+langchain_community
