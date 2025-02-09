@@ -1,2 +1,8 @@
+# Ignore .env files anywhere
+**/.env
+
+# Explicitly ignore the .env file in a specific subdirectory
+/Week2/TravelBot/.env
+
 .env
 /env
