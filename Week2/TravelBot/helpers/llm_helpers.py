@@ -21,16 +21,17 @@ def parse_location(location_string: str) -> dict:
     
     TODO: Build and send a prompt with few-shot examples.
     HINT:
-      - Define the JSON schema (city, state, country, clarifications) using ResponseSchema.
-      - Use a few-shot approach with example inputs and outputs.
-      - Convert examples into prompt text and pass to LLM with `get_llm().predict(...)`.
-      - Parse with StructuredOutputParser to enforce JSON structure.
+        - Define the JSON schema (city, state, country, clarifications) using ResponseSchema.
+        - Use a few-shot approach with example inputs and outputs.
+        - Convert examples into prompt text and pass to LLM with `get_llm().predict(...)`.
+        - Parse with StructuredOutputParser to enforce JSON structure.
     """
-    # Example placeholder schema:
+        # Example placeholder schema:
     schemas = [
         ResponseSchema(name="city", description="City name, or best guess if not explicit"),
         ResponseSchema(name="state", description="State/Province name if applicable, else null or empty"),
         #create schemea for country,
+        ResponseSchema(name="country", description="Country name or best guess if not explicit"),
         ResponseSchema(name="clarifications", description="Any extra info or ambiguities")
     ]
     #https://python.langchain.com/v0.1/docs/modules/model_io/output_parsers/types/structured/
@@ -39,8 +40,8 @@ def parse_location(location_string: str) -> dict:
 
     # TODO: Provide a few-shot list and build your prompt.
     # Something like, add a few more and uncomment
-    """# few_shot_examples = [
-    #   {
+    few_shot_examples = [
+        {
             "input": "NYC, United States",
             "output": {
                 "city": "New York",
@@ -49,23 +50,62 @@ def parse_location(location_string: str) -> dict:
                 "clarifications": ""
             }
         },
-    #   ...
-    # ]"""
-    #Ucomment after few show examples completed
-    """example_text = "\n".join([
+        {
+            "input": "Detroit, United States",
+            "output": {
+                "city": "Detroit",
+                "state": "Michigan",
+                "country": "United States",
+                "clarifications": ""
+            }
+        },
+        {   
+            "input": "San Diego, United States",
+            "output": {
+                "city": "San Diego",
+                "state": "California",
+                "country": "United States",
+                "clarifications": ""
+            }
+        },
+        {   
+            "input": "Tirana, Albania",
+            "output": {
+                "city": "Tirana",
+                "state": "",
+                "country": "Albania",
+                "clarifications": "No state concept in Albania"
+            }
+        },
+    ]
+    #Uncomment after few show examples completed
+    example_text = "\n".join([
         f"Input: {ex['input']}\nJSON Output: {json.dumps(ex['output'], ensure_ascii=False)}\n"
         for ex in few_shot_examples
-    ])"""
-    #TODO: Finish prompt, include role and specific instructions for recieving and output
-    # prompt = f"""
-    #   ...
-    #   {example_text}
-    #   Now parse this user input: "{location_string}"
-    #   {format_instructions}
-    # """
+    ])
 
-    #llm_response = get_llm().predict(prompt)
-    #return dict(parser.parse(llm_response))
+    #TODO: Finish prompt, include role and specific instructions for recieving and output
+    prompt = f"""
+    You are a helpful travel assistant. You receive a location input and must produce:
+        - city
+        - state (or empty string if not applicable)
+        - country
+        - clarifications (if anything is ambiguous or missing)
+
+        Follow these few-shot examples to see how we want the JSON output structured:
+
+        {example_text}
+
+        Now parse this user input:
+        "{location_string}"
+
+        Return a JSON object with keys city, state, country, clarifications.
+
+        {format_instructions}
+        """
+
+    llm_response = get_llm().predict(prompt)
+    return dict(parser.parse(llm_response))
 
     # For now, return a placeholder:
     return {
@@ -82,15 +122,16 @@ def parse_dates(date_string: str) -> dict:
     
     TODO: Similar approach as parse_location, but focused on dates.
     HINT:
-      - Use a JSON schema: start_date, end_date, clarifications.
-      - Provide few-shot examples for date parsing in a prompt.
-      - Parse the response with StructuredOutputParser.
+        - Use a JSON schema: start_date, end_date, clarifications.
+        - Provide few-shot examples for date parsing in a prompt.
+        - Parse the response with StructuredOutputParser.
     """
+    
     # Example placeholder schema:
     schemas = [
         ResponseSchema(name="start_date", description="ISO date for start, else empty"),
         ResponseSchema(name="end_date", description="ISO date for end, else empty"),
-        ResponseSchema(name="clarifications", description="Any ambiguities or notes")
+        ResponseSchema(name="clarifications", description="Any ambiguities or notes, If none, empty")
     ]
     parser = StructuredOutputParser.from_response_schemas(schemas)
     format_instructions = parser.get_format_instructions()
@@ -100,13 +141,60 @@ def parse_dates(date_string: str) -> dict:
     #example_text = 
     #prompt = 
     # Placeholder return:
-    return {
-        "start_date": "",
-        "end_date": "",
-        "clarifications": ""
-    }
 
+    # Create few_shot_examples,
+    few_shot_examples = [
+        {
+            "input": "June 5 to June 10, 2024",
+            "output": {
+                "start_date": "2024-06-05",
+                "end_date": "2024-06-10",
+                "clarifications": ""
+            }
+        },
+        {
+            "input": "2024-01-01",
+            "output": {
+                "start_date": "2024-01-01",
+                "end_date": "",
+                "clarifications": ""
+            }
+        }
+    ]
+    
+    # 3) Convert examples to textual format
+    example_text = "\n".join([
+        f"Input: {ex['input']}\nJSON Output: {json.dumps(ex['output'], ensure_ascii=False)}\n"
+        for ex in few_shot_examples
+    ])
 
+    # 4) Build the final prompt
+    prompt = f"""
+        You are a travel assistant. The user provided the following date information:
+        "{date_string}"
+
+        Below are a few-shot examples of how to parse date inputs and produce valid JSON:
+
+        {example_text}
+
+        Now parse the new input into JSON with keys:
+        start_date, end_date, clarifications.
+        If uncertain, indicate the ambiguity under 'clarifications'.
+
+        {format_instructions}
+        """
+    
+    # 5) Send to LLM and parse
+    llm_output = get_llm().predict(prompt)
+    try:
+        return dict(parser.parse(llm_output))
+    except Exception as e:
+        # Fallback if the LLM output doesn't parse correctly
+        return {
+            "start_date": "",
+            "end_date": "",
+            "clarifications": f"Could not parse: {llm_output}\nError: {str(e)}"
+        }
 
 def process_user_input(user_text: str) -> str:
     """
