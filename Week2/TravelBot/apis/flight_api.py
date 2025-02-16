@@ -35,10 +35,17 @@ def guess_airport_code(place_query: str):
         print(f"Error guessing airport code for '{place_query}': {e}")
         return None
 
+#https://developers.amadeus.com/self-service/category/flights/api-doc/flight-offers-search/api-reference
 def find_flights(origin_code, dest_code, departure_date,
-                  return_date=None, max_price=None):
+                 return_date=None, max_price=None,
+                 adults=1, travel_class=None, non_stop=False):
     """
-    Query the Amadeus Flight Offers Search API for flights.
+    Query the Amadeus Flight Offers Search API for flights, 
+    accepting optional parameters:
+      - max_price: Filter by max price in USD
+      - adults: Number of adult passengers (default=1)
+      - travel_class: "ECONOMY", "PREMIUM_ECONOMY", "BUSINESS", "FIRST"
+      - non_stop: If True, restrict to non-stop flights only
     """
     amadeus = init_amadeus()
     try:
@@ -46,18 +53,24 @@ def find_flights(origin_code, dest_code, departure_date,
             "originLocationCode": origin_code,
             "destinationLocationCode": dest_code,
             "departureDate": departure_date,
-            "adults": 1,
+            "adults": adults,                # optional adult count
             "currencyCode": "USD",
             "max": 5
         }
         if return_date:
             flight_params["returnDate"] = return_date
-        if max_price:
+        if max_price is not None:
             flight_params["maxPrice"] = max_price
+        if travel_class is not None:
+            # Supported values often include: ECONOMY, PREMIUM_ECONOMY, BUSINESS, FIRST
+            flight_params["travelClass"] = travel_class
+        if non_stop:
+            # If the Amadeus API supports 'nonStop' param, set it:
+            flight_params["nonStop"] = True
 
         response = amadeus.shopping.flight_offers_search.get(**flight_params)
         return response.data
     except ResponseError as e:
         print(f"Amadeus Flight Query Error: {e}")
-        print(flight_params)
+        print("Params used:", flight_params)
         return []

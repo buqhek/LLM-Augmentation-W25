@@ -97,72 +97,7 @@ def parse_location(location_string: str) -> dict:
     llm_response = get_llm().predict(prompt)
     return dict(parser.parse(llm_response))
 
-def parse_dates(date_string: str) -> dict:
-    """
-    Parse user-supplied date information into start_date, end_date, and clarifications.
-    Uses a similar few-shot example approach.
-    """
-    # 1) Define the JSON schema
-    schemas = [
-        ResponseSchema(name="start_date", description="ISO date for start, else empty"),
-        ResponseSchema(name="end_date", description="ISO date for end, else empty"),
-        ResponseSchema(name="clarifications", description="Any notes or ambiguities. If none, empty.")
-    ]
-    parser = StructuredOutputParser.from_response_schemas(schemas)
-    format_instructions = parser.get_format_instructions()
 
-    # 2) Build few-shot examples
-    few_shot_examples = [
-        {
-            "input": "June 5 to June 10, 2024",
-            "output": {
-                "start_date": "2024-06-05",
-                "end_date": "2024-06-10",
-                "clarifications": ""
-            }
-        },
-        {
-            "input": "2024-01-01",
-            "output": {
-                "start_date": "2024-01-01",
-                "end_date": "",
-                "clarifications": ""
-            }
-        }
-    ]
-
-    # 3) Convert examples to textual format
-    example_text = "\n".join([
-        f"Input: {ex['input']}\nJSON Output: {json.dumps(ex['output'], ensure_ascii=False)}\n"
-        for ex in few_shot_examples
-    ])
-
-    # 4) Build the final prompt
-    prompt = f"""
-        You are a travel assistant. The user provided the following date information:
-        "{date_string}"
-
-        Below are a few-shot examples of how to parse date inputs and produce valid JSON:
-
-        {example_text}
-
-        Now parse the new input into JSON with keys:
-        start_date, end_date, clarifications.
-        If uncertain, indicate the ambiguity under 'clarifications'.
-
-        {format_instructions}
-        """
-    # 5) Send to LLM and parse
-    llm_output = get_llm().predict(prompt)
-    try:
-        return dict(parser.parse(llm_output))
-    except Exception as e:
-        # Fallback if the LLM output doesn't parse correctly
-        return {
-            "start_date": "",
-            "end_date": "",
-            "clarifications": f"Could not parse: {llm_output}\nError: {str(e)}"
-        }
 
 
 def process_user_input(user_text: str) -> str:
@@ -204,4 +139,3 @@ def process_user_input(user_text: str) -> str:
     except Exception as e:
         print(f"Error processing user input: {e}")
         return "vacation"
-

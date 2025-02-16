@@ -9,11 +9,11 @@ from apis.hotel_api import get_hotel_offers, get_hotels_in_city
 from apis.geolocate_api import geocode_place
 
 # Import your helpers
-from helpers.llm_helpers import (
+from helpers.llm_helpers_sol import (
     parse_location,
-    parse_dates,
     process_user_input
 )
+from helpers.flight_functions import call_parse_flight_options
 
 load_dotenv()
 
@@ -28,6 +28,7 @@ def init_session():
     # We'll use a single 'current_cost' field now.
     if "current_cost" not in session:
         session["current_cost"] = 0.0
+
     if "origin_code" not in session:
         session["origin_code"] = ""
     if "destination_code" not in session:
@@ -112,7 +113,6 @@ def step2():
         if not loc_input:
             error = "Please enter a location."
             return render_template("location.html", error=error, summary=get_summary_context(2))
-
         session["location_raw"] = loc_input
         # Example: set a default origin code
         session["origin_code"] = "DTW"
@@ -150,7 +150,6 @@ def step3():
             return redirect(url_for("step5"))
         elif service == "activities":
             return redirect(url_for("step8"))
-
     return render_template(
         "confirm_location.html",
         city=session["city"],
@@ -217,7 +216,7 @@ def step5():
             session["return_date"] = ""
 
         if service in ["vacation", "flight"]:
-            return redirect(url_for("step6"))  # search flights
+            return redirect(url_for("step6_options"))  # search flights
         else:  # "hotel"
             return redirect(url_for("step7"))
 
@@ -227,48 +226,124 @@ def step5():
 # -------------------------------------------------------------------------
 # STEP 6: Search Flights
 # -------------------------------------------------------------------------
+
+
+@app.route("/step6_options", methods=["GET", "POST"])
+def step6_options():
+    """
+    Step 6 Options:
+    - Ask user for optional flight parameters, e.g. '2 adults, business class, non-stop...'
+    - Force LLM to parse them into JSON (adults, travelClass, nonStop, maxPrice).
+    - Store them in the session, then redirect to step6 (flight search).
+    """
+    init_session()
+
+    if request.method == "POST":
+        user_input = request.form.get("flight_extras", "").strip()
+        if user_input:
+            extras = call_parse_flight_options(user_input)
+            # e.g. extras = {"adults":2, "travelClass":"BUSINESS", "nonStop":True, "maxPrice":400}
+
+            session["adults"] = extras.get("adults", 1)
+            session["travel_class"] = extras.get("travelClass")
+            session["non_stop"] = extras.get("nonStop", False)
+            session["max_price"] = extras.get("maxPrice")
+
+        # Next: step6 => flight search
+        return redirect(url_for("step6"))
+
+    # If GET, just show a form to gather flight extras
+    return render_template("flight_options.html", summary=get_summary_context(6))
+
 @app.route("/step6", methods=["GET", "POST"])
 def step6():
+    """
+    Step 6: Perform the flight search using previously gathered data
+    (origin_code, destination_code, depart_date, return_date)
+    plus optional fields (adults, travel_class, non_stop, max_price)
+    if the user provided them in step6_options.
+    """
     init_session()
     service = session["service"]
-    # If user is "hotel" or "activities", skip
+
     if service == "hotel":
         return redirect(url_for("step7"))
     elif service == "activities":
         return redirect(url_for("step8"))
 
+    # Required Data
     origin = session["origin_code"]
     dest = session["destination_code"]
     dep = session["depart_date"]
     ret = session["return_date"] or None
 
-    flights_data = find_flights(origin, dest, dep, ret)
+    # Optional Fields
+    adults = session.get("adults", 1)
+    travel_class = session.get("travel_class", None)  # Economy, Business, etc.
+    non_stop = session.get("non_stop", False)
+    max_price = session.get("max_price", None)
 
+    # Fetch Flight Offers
+    flights_data = find_flights(
+        origin, dest, dep, ret, max_price=max_price, adults=adults, travel_class=travel_class, non_stop=non_stop
+    )
+
+    # If no flights found, retry with default values
+    if not flights_data:
+        flights_data = find_flights(
+            origin, dest, dep, ret, max_price=None, adults=1, travel_class=None, non_stop=False
+        )
+
+    # Format Flight Options
     flight_options = []
     flight_prices = []
+
     if flights_data:
         for f in flights_data:
             flight_id = f.get("id", "UnknownID")
             price_str = f.get("price", {}).get("grandTotal", "0")
+            currency = f.get("price", {}).get("currency", "USD")
+            num_seats = f.get("numberOfBookableSeats", "N/A")
+            validating_airlines = ", ".join(f.get("validatingAirlineCodes", ["N/A"]))
+
             try:
                 price_val = float(price_str)
             except:
                 price_val = 0.0
-            
-            summary_lines = [f"Flight {flight_id} - ${price_str}"]
+
+            summary_lines = [
+                f"Flight ID: {flight_id}",
+                f"Price: {currency} {price_str}",
+                f"Seats Available: {num_seats}",
+                f"Validating Airline: {validating_airlines}",
+            ]
+
             for i, itin in enumerate(f.get("itineraries", []), start=1):
-                summary_lines.append(f"  Itinerary {i}:")
+                summary_lines.append(f"  Itinerary {i}: Duration {itin.get('duration', 'N/A')}")
                 for j, seg in enumerate(itin.get("segments", []), start=1):
                     dep_iata = seg.get("departure", {}).get("iataCode", "")
-                    dep_time = seg.get("departure", {}).get("at", "")
+                    dep_time = seg.get("departure", {}).get("at", "N/A")
                     arr_iata = seg.get("arrival", {}).get("iataCode", "")
-                    arr_time = seg.get("arrival", {}).get("at", "")
-                    dur = seg.get("duration", "")
-                    carrier = seg.get("carrierCode", "")
-                    flight_num = seg.get("number", "")
+                    arr_time = seg.get("arrival", {}).get("at", "N/A")
+                    carrier = seg.get("carrierCode", "N/A")
+                    flight_num = seg.get("number", "N/A")
+                    aircraft = seg.get("aircraft", {}).get("code", "N/A")
+                    duration = seg.get("duration", "N/A")
+
+                    # Get Travel Class & Baggage Info
+                    travel_class_name = "N/A"
+                    baggage_info = "N/A"
+
+                    for traveler in f.get("travelerPricings", []):
+                        for fare_details in traveler.get("fareDetailsBySegment", []):
+                            if fare_details.get("segmentId") == seg.get("id"):
+                                travel_class_name = fare_details.get("cabin", "N/A")
+                                baggage_info = f"{fare_details.get('includedCheckedBags', {}).get('weight', 'N/A')} {fare_details.get('includedCheckedBags', {}).get('weightUnit', 'KG')}"
+
                     seg_line = (
-                        f"    Segment {j}: {dep_iata}({dep_time}) -> {arr_iata}({arr_time}), "
-                        f"{dur}, Airline {carrier}, Flight {flight_num}"
+                        f"    Segment {j}: {dep_iata} ({dep_time}) → {arr_iata} ({arr_time})\n"
+                        f"      - Carrier: {carrier}, Flight {flight_num}, Aircraft {aircraft}, Duration: {duration}\n"
+                        f"      - Travel Class: {travel_class_name}, Checked Baggage: {baggage_info}"
                     )
                     summary_lines.append(seg_line)
 
@@ -276,45 +351,57 @@ def step6():
             flight_options.append(flight_summary)
             flight_prices.append(price_val)
 
+    # Handle User Selection
     if request.method == "POST":
         chosen_index = int(request.form.get("chosen_flight_index", "-1"))
         if 0 <= chosen_index < len(flight_options):
-            chosen_summary = flight_options[chosen_index]
-            chosen_price = flight_prices[chosen_index]
-            # accumulate cost
-            session["current_cost"] = session.get("current_cost", 0.0) + chosen_price
-            session["flight_choice"] = chosen_summary
+            session["flight_choice"] = flight_options[chosen_index]
+            session["current_cost"] = session.get("current_cost", 0.0) + flight_prices[chosen_index]
 
-        # next step: if "vacation" => step7, if "flight" => step8
-        if service == "vacation":
-            return redirect(url_for("step7"))
-        else:
-            return redirect(url_for("step8"))
+        return redirect(url_for("step7_options") if service == "vacation" else url_for("step8"))
 
-    return render_template(
-        "flights.html",
-        flights=flight_options,
-        summary=get_summary_context(6)
-    )
+    return render_template("flights.html", flights=flight_options, summary=get_summary_context(6))
+
 
 
 # -------------------------------------------------------------------------
 # STEP 7: Hotels
 # -------------------------------------------------------------------------
+
+@app.route("/step7_options", methods=["GET", "POST"])
+def step7_options():
+    """
+    Similar to flight extras, gather optional hotel info: adults, rooms, priceRange.
+    """
+    init_session()
+
+    if request.method == "POST":
+        user_input = request.form.get("hotel_extras", "")
+        from helpers.hotel_functions import call_parse_hotel_options
+        extras = call_parse_hotel_options(user_input)
+        # e.g. {"adults":2, "rooms":2, "priceRange":"-300"}
+
+        session["hotel_adults"] = extras.get("adults", 1)
+        session["hotel_rooms"] = extras.get("rooms", 1)
+        session["hotel_price_range"] = extras.get("priceRange")
+
+        return redirect(url_for("step7"))  # Now run the main step7
+
+    return render_template("hotel_options.html", summary=get_summary_context(7))
+
 @app.route("/step7", methods=["GET", "POST"])
 def step7():
     init_session()
     service = session["service"]
+
     if service == "flight":
         return redirect(url_for("step8"))
     elif service == "activities":
         return redirect(url_for("step8"))
 
     dest_code = session["destination_code"]
-    # find hotels
     hotels_data = get_hotels_in_city(dest_code, radius_km=10)
-    hotel_names = []
-    hotel_ids = []
+    hotel_names, hotel_ids = [], []
 
     if hotels_data:
         for h in hotels_data:
@@ -329,22 +416,43 @@ def step7():
             idx = int(request.form.get("selected_hotel", "-1"))
             if 0 <= idx < len(hotel_ids):
                 selected_id = hotel_ids[idx]
+
+                # Fetch offers using user preferences
                 offers_data = get_hotel_offers(
                     [selected_id],
                     check_in=session["depart_date"],
-                    check_out=session["return_date"] or None
+                    check_out=session["return_date"] or None,
+                    adults=session.get("adults", 1),
+                    rooms=session.get("rooms", 1),
+                    price_range=session.get("price_range")
                 )
+
+                # If no offers found, retry with default values
+                if not offers_data:
+                    offers_data = get_hotel_offers(
+                        [selected_id],
+                        check_in=session["depart_date"],
+                        check_out=session["return_date"] or None,
+                        adults=1,
+                        rooms=1,
+                        price_range=None
+                    )
+
+                # Store offers in session with correct details
                 session["current_offers"] = []
                 if offers_data:
                     for item in offers_data:
                         if "offers" in item:
                             for o in item["offers"]:
-                                oid = o.get("id", "N/A")
-                                price_str = o.get("price", {}).get("total", "0")
                                 session["current_offers"].append({
-                                    "id": oid,
-                                    "price": price_str
+                                    "id": o.get("id", "N/A"),
+                                    "price": o.get("price", {}).get("total", "0"),
+                                    "check_in": o.get("checkInDate", "N/A"),
+                                    "check_out": o.get("checkOutDate", "N/A"),
+                                    "rooms": o.get("room", {}).get("typeEstimated", {}).get("category", "N/A"),
+                                    "guests": o.get("guests", {}).get("adults", "N/A")
                                 })
+
             return redirect(url_for("step7"))
 
         elif "confirm_hotel_offer" in request.form:
@@ -357,12 +465,15 @@ def step7():
                 except:
                     price_val = 0.0
                 session["current_cost"] = session.get("current_cost", 0.0) + price_val
-                session["hotel_choice"] = f"Hotel Offer {chosen_offer['id']} - ${price_str}"
+                session["hotel_choice"] = (
+                    f"Hotel Offer {chosen_offer['id']} - ${price_str}, "
+                    f"Check-in: {chosen_offer['check_in']}, Check-out: {chosen_offer['check_out']}, "
+                    f"Rooms: {chosen_offer['rooms']}, Guests: {chosen_offer['guests']} adults"
+                )
 
             if service == "vacation":
                 return redirect(url_for("step8"))
             else:
-                # if "hotel" only => done or step9
                 return redirect(url_for("step9"))
 
     offers = session.get("current_offers", [])
