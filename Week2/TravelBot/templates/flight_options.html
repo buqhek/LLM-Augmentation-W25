@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}TravelBot - Step 6 Options{% endblock %}
+{% block content %}
+<h2>Step 6 (Optional Flight Preferences)</h2>
+
+<form method="POST">
+  <p>Enter optional flight preferences (e.g. "2 adults, business class, max 400, no stops"):<br/>
+  <textarea name="flight_extras" rows="3" cols="50"></textarea></p>
+
+  <button type="submit">Parse Flight Extras</button>
+</form>
+
+<form method="POST" action="{{ url_for('clear_session') }}" style="display:inline;">
+  <button type="submit">Clear</button>
+</form>
+
+{% include "summary.html" %}
+{% endblock %}

@@ -1,3 +1,5 @@
+import requests
+
 def geocode_place(place_query: str):
     """
     Make a GET request to Nominatim with the free-form query.

@@ -72,5 +72,7 @@ def call_parse_hotel_options(user_text: str, model="gpt-4-turbo") -> dict:
     fn_args = json.loads(message.tool_calls[0].function.arguments) 
 
     # Call the actual Python function
+    print(fn_args)
     result = parse_hotel_options(**fn_args)
+    print(result)
     return result
