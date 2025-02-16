@@ -10,9 +10,9 @@ import openai
 def parse_hotel_options(adults: int = None, rooms: int = None, price_range: str = None) -> dict:
     """
     Parse optional hotel parameters:
-      - adults: Number of adult guests per room (default = 1)
-      - rooms: Number of rooms requested (default = 1)
-      - price_range: Filter hotel offers by price range (e.g., '200-300' or '-300')
+        - adults: Number of adult guests per room (default = 1)
+        - rooms: Number of rooms requested (default = 1)
+        - price_range: Filter hotel offers by price range (e.g., '200-300' or '-300')
     If not provided, set them to sensible defaults or None.
     """
     return {
