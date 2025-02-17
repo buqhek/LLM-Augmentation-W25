@@ -20,6 +20,8 @@ def parse_location(location_string: str) -> dict:
     Parse a user-supplied location into city, state, country, and clarifications.
     
     TODO: Build and send a prompt with few-shot examples.
+    
+    
     HINT:
         - Define the JSON schema (city, state, country, clarifications) using ResponseSchema.
         - Use a few-shot approach with example inputs and outputs.
@@ -27,6 +29,8 @@ def parse_location(location_string: str) -> dict:
         - Parse with StructuredOutputParser to enforce JSON structure.
     """
         # Example placeholder schema:
+
+    # 1: Build JSON SCHEMA
     schemas = [
         ResponseSchema(name="city", description="City name, or best guess if not explicit"),
         ResponseSchema(name="state", description="State/Province name if applicable, else null or empty"),
@@ -40,6 +44,8 @@ def parse_location(location_string: str) -> dict:
 
     # TODO: Provide a few-shot list and build your prompt.
     # Something like, add a few more and uncomment
+
+    # 2: Create few shot prompt examples
     few_shot_examples = [
         {
             "input": "NYC, United States",
@@ -85,6 +91,8 @@ def parse_location(location_string: str) -> dict:
     ])
 
     #TODO: Finish prompt, include role and specific instructions for recieving and output
+    
+    # 3 : Finish prompt
     prompt = f"""
     You are a helpful travel assistant. You receive a location input and must produce:
         - city
@@ -107,13 +115,13 @@ def parse_location(location_string: str) -> dict:
     llm_response = get_llm().predict(prompt)
     return dict(parser.parse(llm_response))
 
-    # For now, return a placeholder:
-    return {
-        "city": "",
-        "state": "",
-        "country": "",
-        "clarifications": ":"
-    }
+    # # For now, return a placeholder:
+    # return {
+    #     "city": "",
+    #     "state": "",
+    #     "country": "",
+    #     "clarifications": ":"
+    # }
 
 
 def parse_dates(date_string: str) -> dict:

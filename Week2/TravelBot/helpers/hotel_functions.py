@@ -32,6 +32,25 @@ parse_hotel_options_schema = {
         "name": "parse_hotel_options",
         "description": "Extract optional hotel parameters: 'adults', 'rooms', and 'price_range'.",
         "parameters": {
+            "type": "object",
+                "properties": {
+                    "adults": {
+                        "type": "int",  # number of adult guests per room (default = 1)
+                        "description": "Number of adult guests per room (if unspecified, default = 1)."
+                    },
+                    "travelClass": {
+                        "type": "string",  # Cabin type
+                        "description": "cabin type such as [BUSINESS, ECONOMY]"
+                    },
+                    "nonStop": {
+                        "type": "bool",  # whether the flight is nonstop
+                        "description": "[1] if the guest has a non-stop flight, [0] otherwise."
+                    },
+                    "maxPrice": {
+                        "type": "int",  # the maximum price in USD
+                        "description": "The maximum price (null if unspecified)."
+                    },
+                },
         #TODO
             "required": []  # All parameters are optional
         }
