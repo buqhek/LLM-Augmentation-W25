@@ -1,0 +1,5 @@
+openai 
+langchain 
+ipywidgets
+langchain_community
+numexpr
